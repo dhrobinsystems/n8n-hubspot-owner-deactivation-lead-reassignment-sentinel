@@ -1,0 +1,1873 @@
+{
+  "name": "HubSpot Owner Deactivation Lead Reassignment Sentinel (dhRobin Systems)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## n8n-hubspot-owner-deactivation-lead-reassignment-sentinel\n**dhRobin Systems** · Daily owner status audit: active + archived owners → deactivated owners (`archived: true` / `active: false`) → open deals, open contacts, open tasks still assigned → grace period + mass-deactivation guard → coverage routing (direct map → team pool → backup pool → fallback owner → hold) → batch owner updates → Slack Block Kit alert → run summary webhook (with rollback payloads) → audit.\n\n**Safe by default.** With no environment variables set:\n- `SANDBOX_MODE=true`: synthetic owners and records, **zero HubSpot or Slack calls**.\n- `DRY_RUN=true`, `REASSIGNMENT_ENABLED=false`, `SEND_SLACK_ALERTS=false`.",
+        "height": 360,
+        "width": 720,
+        "color": 5
+      },
+      "id": "d19a292f-f1b0-50fa-87ca-ad0282befd29",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        -540
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Coverage routing (per object)\n1. `REASSIGNMENT_MAP` (owner → rep, pool, or per object)\n2. `TEAM_COVERAGE` (owner's team → pool)\n3. `BACKUP_COVERAGE_OWNER_IDS` (round-robin pool)\n4. `FALLBACK_OWNER_ID`\n5. Hold and alert\nEvery target must be an **active** owner; invalid targets are skipped and reported.",
+        "height": 260,
+        "width": 460,
+        "color": 6
+      },
+      "id": "55af57ff-5a51-5aba-8600-966edcbef404",
+      "name": "Routing Notice",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        -480
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Pinned synthetic payloads\nPinned: active + archived owners, record searches (9), batch updates (3), Slack, run summary webhook.\nPins apply to **manual executions only**. Unpin a node before a manual live test.",
+        "height": 180,
+        "width": 420,
+        "color": 3
+      },
+      "id": "37b11e23-6b10-5a32-8d9d-8df62aab89b6",
+      "name": "Pinned Data Notice",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "20 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "4b675020-2d9c-54ad-b335-c367f63b7f59",
+      "name": "Daily Owner Status Audit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -600,
+        120
+      ],
+      "notes": "Daily 06:20 UTC.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "id": "50061c94-6097-5f60-9f1b-7ff2b65959bf",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "68cb865c-ade9-56a9-959c-60550084d09f",
+              "name": "config.sandboxMode",
+              "value": "={{ String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "9bac66cb-baa4-5b89-89f4-b9eb715973e8",
+              "name": "config.dryRun",
+              "value": "={{ String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "bf03de07-93d6-5fa7-8114-83cb0c76bba9",
+              "name": "config.reassignmentEnabled",
+              "value": "={{ !(String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') && !(String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false') && String($env.REASSIGNMENT_ENABLED ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "36c7f840-758c-5efe-b2a0-71b1775d3633",
+              "name": "config.sendSlackAlerts",
+              "value": "={{ !(String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') && !(String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false') && String($env.SEND_SLACK_ALERTS ?? 'false').trim().toLowerCase() === 'true' && Boolean(String($env.SLACK_ALERT_WEBHOOK_URL ?? '').trim()) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "2255806d-dfc7-5995-a55f-509d5880bb38",
+              "name": "config.webhookEnabled",
+              "value": "={{ !(String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') && !(String($env.DRY_RUN ?? 'true').trim().toLowerCase() !== 'false') && Boolean(String($env.ALERT_WEBHOOK_URL ?? '').trim()) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "00f79fe6-f8b7-5b54-86a3-32295869ca26",
+              "name": "config.notifyOnEveryRun",
+              "value": "={{ String($env.NOTIFY_ON_EVERY_RUN ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "098496f0-ecc0-5354-b5e1-15210ea7f312",
+              "name": "config.notifyWhenClear",
+              "value": "={{ String($env.NOTIFY_WHEN_CLEAR ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "fbfd38d6-3ed6-5404-8cdf-d83973f76900",
+              "name": "config.reassignObjects",
+              "value": "={{ String($env.REASSIGN_OBJECTS ?? 'deals,contacts,tasks').toLowerCase().split(',').map(x => x.trim()).filter(x => ['deals', 'contacts', 'tasks'].includes(x)).filter((x, i, a) => a.indexOf(x) === i) }}",
+              "type": "array"
+            },
+            {
+              "id": "9e243457-96b2-5ee1-8175-239b561d58e1",
+              "name": "config.reassignmentMap",
+              "value": "={{ (() => { const t = String($env.REASSIGNMENT_MAP ?? '').trim(); if (t) { try { const j = JSON.parse(t); return j && typeof j === 'object' && !Array.isArray(j) ? j : { __invalid: true }; } catch (e) { return { __invalid: true }; } } return (String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? {\"55001\": {\"deals\": \"55002\", \"contacts\": \"55003\", \"tasks\": \"55002\"}, \"55008\": \"55010\"} : {}; })() }}",
+              "type": "object"
+            },
+            {
+              "id": "1b788299-b730-5a44-ada3-04f9a2846065",
+              "name": "config.teamCoverage",
+              "value": "={{ (() => { const t = String($env.TEAM_COVERAGE ?? '').trim(); if (t) { try { const j = JSON.parse(t); return j && typeof j === 'object' && !Array.isArray(j) ? j : { __invalid: true }; } catch (e) { return { __invalid: true }; } } return (String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? {\"7001\": [\"55002\"], \"7002\": [\"55003\", \"55009\"]} : {}; })() }}",
+              "type": "object"
+            },
+            {
+              "id": "56077922-3a3b-5f40-8abd-20ba7d4bc3f7",
+              "name": "config.backupCoverageOwnerIds",
+              "value": "={{ ((t) => (t ? t : ((String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? '55002,55003' : '')).split(',').map(x => x.trim()).filter(x => /^\\d+$/.test(x)))(String($env.BACKUP_COVERAGE_OWNER_IDS ?? '').trim()) }}",
+              "type": "array"
+            },
+            {
+              "id": "adae72dc-ffb2-570f-a976-cca691e7bc3f",
+              "name": "config.fallbackOwnerId",
+              "value": "={{ ((t) => /^\\d+$/.test(t) ? t : (!t && (String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? '55009' : ''))(String($env.FALLBACK_OWNER_ID ?? '').trim()) }}",
+              "type": "string"
+            },
+            {
+              "id": "6c8076e0-aa38-543a-bc68-870e0ae1bb89",
+              "name": "config.excludedOwnerIds",
+              "value": "={{ ((t) => (t ? t : ((String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? '55007' : '')).split(',').map(x => x.trim()).filter(x => /^\\d+$/.test(x)))(String($env.EXCLUDED_OWNER_IDS ?? '').trim()) }}",
+              "type": "array"
+            },
+            {
+              "id": "65684163-418d-55b9-9f9e-01b1482d2204",
+              "name": "config.gracePeriodHours",
+              "value": "={{ Math.min(720, Math.max(0, Number.isFinite(parseFloat($env.GRACE_PERIOD_HOURS)) ? Math.round(parseFloat($env.GRACE_PERIOD_HOURS)) : 12)) }}",
+              "type": "number"
+            },
+            {
+              "id": "b9e7de6e-5b56-5339-80cd-d8bbff20f434",
+              "name": "config.lookbackDays",
+              "value": "={{ Math.min(3650, Math.max(0, Number.isFinite(parseFloat($env.DEACTIVATION_LOOKBACK_DAYS)) ? Math.round(parseFloat($env.DEACTIVATION_LOOKBACK_DAYS)) : 0)) }}",
+              "type": "number"
+            },
+            {
+              "id": "3ea892b8-42ac-5a1c-8bb9-445aba8c2cb9",
+              "name": "config.massDeactivationThreshold",
+              "value": "={{ Math.min(1000, Math.max(0, Number.isFinite(parseFloat($env.MASS_DEACTIVATION_THRESHOLD)) ? Math.round(parseFloat($env.MASS_DEACTIVATION_THRESHOLD)) : 3)) }}",
+              "type": "number"
+            },
+            {
+              "id": "09381bf2-e575-5fbd-84e7-1f1af097c7cd",
+              "name": "config.massDeactivationWindowHours",
+              "value": "={{ Math.min(2160, Math.max(1, Number.isFinite(parseFloat($env.MASS_DEACTIVATION_WINDOW_HOURS)) ? Math.round(parseFloat($env.MASS_DEACTIVATION_WINDOW_HOURS)) : 72)) }}",
+              "type": "number"
+            },
+            {
+              "id": "f5793695-9cbc-5c9c-87cc-21947cfe35d2",
+              "name": "config.maxReassignmentsPerRun",
+              "value": "={{ Math.min(5000, Math.max(1, Number.isFinite(parseFloat($env.MAX_REASSIGNMENTS_PER_RUN)) ? Math.round(parseFloat($env.MAX_REASSIGNMENTS_PER_RUN)) : 500)) }}",
+              "type": "number"
+            },
+            {
+              "id": "7a5137d9-7c74-5ff9-805e-0e508f669d52",
+              "name": "config.searchPageSize",
+              "value": "={{ Math.min(200, Math.max(1, Number.isFinite(parseFloat($env.SEARCH_PAGE_SIZE)) ? Math.round(parseFloat($env.SEARCH_PAGE_SIZE)) : 100)) }}",
+              "type": "number"
+            },
+            {
+              "id": "6b4dad80-bd5e-5867-8432-11795d80d3e2",
+              "name": "config.contactExcludeLifecycleStages",
+              "value": "={{ String($env.CONTACT_EXCLUDE_LIFECYCLE_STAGES ?? 'customer,evangelist').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "4b959318-f72e-5c8a-abb0-24a91f27a216",
+              "name": "config.dealExcludeStages",
+              "value": "={{ String($env.DEAL_EXCLUDE_STAGES ?? '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "b60e1e90-7fd0-59bc-b87f-d168d1f839ba",
+              "name": "config.previousOwnerProperty",
+              "value": "={{ (p => /^[a-z][a-z0-9_]{0,99}$/.test(p) ? p : '')(String($env.PREVIOUS_OWNER_PROPERTY ?? '').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "dd14f676-a665-5b0c-bb5e-5f50d0cff9ca",
+              "name": "config.previousOwnerObjects",
+              "value": "={{ String($env.PREVIOUS_OWNER_PROPERTY_OBJECTS ?? 'deals,contacts').toLowerCase().split(',').map(x => x.trim()).filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "0598e543-ff1f-5022-90ff-463783d1ca8e",
+              "name": "config.showRecordNames",
+              "value": "={{ String($env.SHOW_RECORD_NAMES ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "95e16f2e-a99d-586b-a8f9-185345395a9f",
+              "name": "config.showOwnerEmail",
+              "value": "={{ String($env.SHOW_OWNER_EMAIL ?? 'false').trim().toLowerCase() === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "3fe3af22-e73d-595d-8087-c030f856a2bc",
+              "name": "config.sampleLinksPerObject",
+              "value": "={{ Math.min(10, Math.max(0, Number.isFinite(parseFloat($env.SAMPLE_LINKS_PER_OBJECT)) ? Math.round(parseFloat($env.SAMPLE_LINKS_PER_OBJECT)) : 3)) }}",
+              "type": "number"
+            },
+            {
+              "id": "9f97084c-42eb-52e0-a503-cc3caffe2a94",
+              "name": "config.suppressRepeatAlerts",
+              "value": "={{ String($env.SUPPRESS_REPEAT_ALERTS ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "08bd2cec-9d42-58cc-a304-c7996174d9d9",
+              "name": "config.alertOnReadFailure",
+              "value": "={{ String($env.ALERT_ON_READ_FAILURE ?? 'true').trim().toLowerCase() !== 'false' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "86dd758f-c7da-5954-add0-726f0784f3ee",
+              "name": "config.portalId",
+              "value": "={{ ((t) => /^\\d+$/.test(t) ? t : '')(String($env.HUBSPOT_PORTAL_ID ?? ((String($env.SANDBOX_MODE ?? 'true').trim().toLowerCase() !== 'false') ? '99000001' : '')).trim()) }}",
+              "type": "string"
+            },
+            {
+              "id": "5f4bd682-4e1a-53f4-9686-ef759a334736",
+              "name": "config.appHost",
+              "value": "={{ (h => /^[a-z0-9.-]+\\.hubspot\\.com$/.test(h) ? h : 'app.hubspot.com')(String($env.HUBSPOT_APP_HOST ?? 'app.hubspot.com').trim().toLowerCase()) }}",
+              "type": "string"
+            },
+            {
+              "id": "478ca8f5-0808-5324-b0f4-83800dd18822",
+              "name": "config.usersSettingsUrlTemplate",
+              "value": "={{ (t => /^https:\\/\\//.test(t) ? t : 'https://{appHost}/settings/{portalId}/users')(String($env.HUBSPOT_USERS_SETTINGS_URL_TEMPLATE ?? '').trim()) }}",
+              "type": "string"
+            },
+            {
+              "id": "6c1b236f-3822-598b-b1c0-0a9d9a1c3943",
+              "name": "config.hubspotBaseUrl",
+              "value": "={{ String($env.HUBSPOT_API_BASE_URL ?? 'https://api.hubapi.com').trim().replace(/\\/+$/, '') || 'https://api.hubapi.com' }}",
+              "type": "string"
+            },
+            {
+              "id": "4448fc41-9f96-579a-a8d3-8e7d2a1862a6",
+              "name": "config.runId",
+              "value": "={{ $execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "1d0f8621-337f-5aa6-92e3-7048ddb3b42d",
+              "name": "config.executionMode",
+              "value": "={{ $execution.mode }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f193423-5f29-5fa3-94e6-4e4cc4aca504",
+      "name": "Config & Safety Gate",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -380,
+        200
+      ],
+      "notes": "Typed, non-secret configuration under config.*, including the coverage mapping. Flags record only whether a secret or URL is set.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "d3b0d1a2-461f-5230-ae5c-a9e19785289b",
+              "leftValue": "={{ $('Config & Safety Gate').first().json.config.sandboxMode }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d6153fbb-a607-5ac4-b94d-35215843c1f9",
+      "name": "Sandbox Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Mock Owner Context (SANDBOX_MODE=true)\n// Synthetic owners (active + archived) and owned records from\n// sample-payloads/hubspot-owners-and-records.json. No HubSpot calls.\n// Records are grouped per owner the way the live searches return them, but\n// closed deals, customer contacts and completed tasks are left in on purpose:\n// the analysis node re-applies every filter.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst FIXTURE = {\"_meta\":{\"notice\":\"Synthetic data only. Portal, owner IDs, user IDs, team IDs, names, emails and records are fictional placeholders.\",\"portalId\":\"99000001\",\"relativeTimes\":\"_relative.updatedHoursAgo is resolved to an ISO updatedAt at run time (the owner's updatedAt is used as the deactivation time).\",\"expected\":{\"reassigned\":{\"deals\":7,\"contacts\":4,\"tasks\":5},\"pendingGrace\":[\"55005\"],\"excluded\":[\"55007\"],\"noOpenRecords\":[\"55006\",\"55010\"]}},\"coverageMapping\":{\"REASSIGNMENT_MAP\":{\"55001\":{\"deals\":\"55002\",\"contacts\":\"55003\",\"tasks\":\"55002\"},\"55008\":\"55010\"},\"TEAM_COVERAGE\":{\"7001\":[\"55002\"],\"7002\":[\"55003\",\"55009\"]},\"BACKUP_COVERAGE_OWNER_IDS\":[\"55002\",\"55003\"],\"FALLBACK_OWNER_ID\":\"55009\",\"EXCLUDED_OWNER_IDS\":[\"55007\"]},\"owners\":{\"active\":{\"results\":[{\"id\":\"55002\",\"email\":\"marcus.vance@example.com\",\"type\":\"PERSON\",\"firstName\":\"Marcus\",\"lastName\":\"Vance\",\"userId\":81000002,\"userIdIncludingInactive\":81000002,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":false,\"teams\":[{\"id\":\"7001\",\"name\":\"Enterprise AE (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":900}},{\"id\":\"55003\",\"email\":\"priya.raman@example.com\",\"type\":\"PERSON\",\"firstName\":\"Priya\",\"lastName\":\"Raman\",\"userId\":81000003,\"userIdIncludingInactive\":81000003,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":false,\"teams\":[{\"id\":\"7002\",\"name\":\"SMB Sales (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":900}},{\"id\":\"55009\",\"email\":\"sofia.lind@example.com\",\"type\":\"PERSON\",\"firstName\":\"Sofia\",\"lastName\":\"Lind\",\"userId\":81000009,\"userIdIncludingInactive\":81000009,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":false,\"teams\":[{\"id\":\"7002\",\"name\":\"SMB Sales (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":900}},{\"id\":\"55004\",\"email\":\"jordan.ellis@example.com\",\"type\":\"PERSON\",\"firstName\":\"Jordan\",\"lastName\":\"Ellis\",\"userId\":81000004,\"userIdIncludingInactive\":81000004,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":false,\"teams\":[{\"id\":\"7001\",\"name\":\"Enterprise AE (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":26},\"active\":false,\"_scenario\":\"Owner list from a source that exposes an active flag: treated as deactivated\"}]},\"archived\":{\"results\":[{\"id\":\"55001\",\"email\":\"dana.whitfield@example.com\",\"type\":\"PERSON\",\"firstName\":\"Dana\",\"lastName\":\"Whitfield\",\"userId\":null,\"userIdIncludingInactive\":81000001,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":true,\"teams\":[{\"id\":\"7001\",\"name\":\"Enterprise AE (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":30},\"_scenario\":\"Deactivated 30h ago: direct per-object mapping\"},{\"id\":\"55005\",\"email\":\"leo.hartmann@example.com\",\"type\":\"PERSON\",\"firstName\":\"Leo\",\"lastName\":\"Hartmann\",\"userId\":null,\"userIdIncludingInactive\":81000005,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":true,\"teams\":[{\"id\":\"7002\",\"name\":\"SMB Sales (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":3},\"_scenario\":\"Deactivated 3h ago: inside the grace period\"},{\"id\":\"55006\",\"email\":\"nina.brooks@example.com\",\"type\":\"PERSON\",\"firstName\":\"Nina\",\"lastName\":\"Brooks\",\"userId\":null,\"userIdIncludingInactive\":81000006,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":true,\"teams\":[{\"id\":\"7002\",\"name\":\"SMB Sales (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":50},\"_scenario\":\"Deactivated, no open records\"},{\"id\":\"55007\",\"email\":\"integration.user@example.com\",\"type\":\"PERSON\",\"firstName\":\"Integration\",\"lastName\":\"User\",\"userId\":null,\"userIdIncludingInactive\":81000007,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":true,\"teams\":[],\"_relative\":{\"updatedHoursAgo\":40},\"_scenario\":\"Excluded service owner\"},{\"id\":\"55008\",\"email\":\"omar.castillo@example.com\",\"type\":\"PERSON\",\"firstName\":\"Omar\",\"lastName\":\"Castillo\",\"userId\":null,\"userIdIncludingInactive\":81000008,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":true,\"teams\":[{\"id\":\"7002\",\"name\":\"SMB Sales (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":17520},\"_scenario\":\"Deactivated 2 years ago with records left behind; mapped target 55010 is itself deactivated\"},{\"id\":\"55010\",\"email\":\"grace.okafor@example.com\",\"type\":\"PERSON\",\"firstName\":\"Grace\",\"lastName\":\"Okafor\",\"userId\":null,\"userIdIncludingInactive\":81000010,\"createdAt\":\"2024-02-01T09:00:00.000Z\",\"archived\":true,\"teams\":[{\"id\":\"7001\",\"name\":\"Enterprise AE (synthetic)\",\"primary\":true}],\"_relative\":{\"updatedHoursAgo\":9600},\"_scenario\":\"Deactivated, used as an (invalid) mapping target\"}]}},\"records\":{\"deals\":[{\"id\":\"8100101\",\"_ownerId\":\"55001\",\"properties\":{\"dealname\":\"Apex Logistics - Platform expansion\",\"amount\":\"180000\",\"dealstage\":\"contractsent\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"8100102\",\"_ownerId\":\"55001\",\"properties\":{\"dealname\":\"Vanguard Cloud - Renewal 2027\",\"amount\":\"96000\",\"dealstage\":\"decisionmakerboughtin\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"8100103\",\"_ownerId\":\"55001\",\"properties\":{\"dealname\":\"Orchid Health - Pilot\",\"amount\":\"24000\",\"dealstage\":\"qualifiedtobuy\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"8100104\",\"_ownerId\":\"55001\",\"properties\":{\"dealname\":\"Summit Retail - Analytics add-on\",\"amount\":\"41000\",\"dealstage\":\"presentationscheduled\",\"pipeline\":\"renewals\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"8100105\",\"_ownerId\":\"55001\",\"properties\":{\"dealname\":\"Kestrel Fintech - Closed deal\",\"amount\":\"65000\",\"dealstage\":\"closedwon\",\"pipeline\":\"default\",\"hs_is_closed\":\"true\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"8100106\",\"_ownerId\":\"55008\",\"properties\":{\"dealname\":\"Harbor Freightways - Fleet module\",\"amount\":\"33000\",\"dealstage\":\"appointmentscheduled\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55008\"}},{\"id\":\"8100107\",\"_ownerId\":\"55008\",\"properties\":{\"dealname\":\"Brightwater Labs - Seat expansion\",\"amount\":\"12000\",\"dealstage\":\"qualifiedtobuy\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55008\"}},{\"id\":\"8100108\",\"_ownerId\":\"55005\",\"properties\":{\"dealname\":\"Northwind Media - Upgrade\",\"amount\":\"28000\",\"dealstage\":\"contractsent\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55005\"}},{\"id\":\"8100109\",\"_ownerId\":\"55005\",\"properties\":{\"dealname\":\"Lumiere Optique - New logo\",\"amount\":\"54000\",\"dealstage\":\"appointmentscheduled\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55005\"}},{\"id\":\"8100110\",\"_ownerId\":\"55004\",\"properties\":{\"dealname\":\"Cobalt Systems - Expansion\",\"amount\":\"72000\",\"dealstage\":\"presentationscheduled\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55004\"}},{\"id\":\"8100111\",\"_ownerId\":\"55007\",\"properties\":{\"dealname\":\"Sync test deal\",\"amount\":\"1\",\"dealstage\":\"appointmentscheduled\",\"pipeline\":\"default\",\"hs_is_closed\":\"false\",\"hubspot_owner_id\":\"55007\"}}],\"contacts\":[{\"id\":\"9100101\",\"_ownerId\":\"55001\",\"properties\":{\"firstname\":\"Sarah\",\"lastname\":\"Jenkins\",\"email\":\"sarah.jenkins@example.com\",\"lifecyclestage\":\"lead\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"9100102\",\"_ownerId\":\"55001\",\"properties\":{\"firstname\":\"Ethan\",\"lastname\":\"Moore\",\"email\":\"ethan.moore@example.com\",\"lifecyclestage\":\"marketingqualifiedlead\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"9100103\",\"_ownerId\":\"55001\",\"properties\":{\"firstname\":\"Aisha\",\"lastname\":\"Khan\",\"email\":\"aisha.khan@example.com\",\"lifecyclestage\":\"salesqualifiedlead\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"9100104\",\"_ownerId\":\"55001\",\"properties\":{\"firstname\":\"Lena\",\"lastname\":\"Vogel\",\"email\":\"lena.vogel@example.com\",\"lifecyclestage\":\"customer\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"9100105\",\"_ownerId\":\"55008\",\"properties\":{\"firstname\":\"Diego\",\"lastname\":\"Alvarez\",\"email\":\"diego.alvarez@example.com\",\"lifecyclestage\":\"opportunity\",\"hubspot_owner_id\":\"55008\"}},{\"id\":\"9100106\",\"_ownerId\":\"55005\",\"properties\":{\"firstname\":\"Hannah\",\"lastname\":\"Cole\",\"email\":\"hannah.cole@example.com\",\"lifecyclestage\":\"lead\",\"hubspot_owner_id\":\"55005\"}}],\"tasks\":[{\"id\":\"6100101\",\"_ownerId\":\"55001\",\"properties\":{\"hs_task_subject\":\"Follow up: Apex Logistics contract redlines\",\"hs_task_status\":\"NOT_STARTED\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"6100102\",\"_ownerId\":\"55001\",\"properties\":{\"hs_task_subject\":\"Prep: Vanguard Cloud renewal call\",\"hs_task_status\":\"IN_PROGRESS\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"6100103\",\"_ownerId\":\"55001\",\"properties\":{\"hs_task_subject\":\"Send pilot recap to Orchid Health\",\"hs_task_status\":\"WAITING\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"6100104\",\"_ownerId\":\"55001\",\"properties\":{\"hs_task_subject\":\"Log notes: Kestrel Fintech kickoff\",\"hs_task_status\":\"COMPLETED\",\"hubspot_owner_id\":\"55001\"}},{\"id\":\"6100105\",\"_ownerId\":\"55008\",\"properties\":{\"hs_task_subject\":\"Call: Harbor Freightways demo\",\"hs_task_status\":\"NOT_STARTED\",\"hubspot_owner_id\":\"55008\"}},{\"id\":\"6100106\",\"_ownerId\":\"55004\",\"properties\":{\"hs_task_subject\":\"Draft proposal: Cobalt Systems\",\"hs_task_status\":\"NOT_STARTED\",\"hubspot_owner_id\":\"55004\"}}]}};\nconst now = Date.now();\nconst owner = (o) => { const c = JSON.parse(JSON.stringify(o)); const h = c._relative?.updatedHoursAgo; if (Number.isFinite(h)) c.updatedAt = new Date(now - h * 3600000).toISOString(); delete c._relative; delete c._scenario; return c; };\nconst records = {};\nfor (const objectType of ['deals', 'contacts', 'tasks']) {\n  for (const r of FIXTURE.records[objectType]) {\n    const o = r._ownerId; records[o] = records[o] || {};\n    const slot = records[o][objectType] = records[o][objectType] || { results: [], total: 0, error: null };\n    slot.results.push({ id: r.id, properties: r.properties }); slot.total += 1;\n  }\n}\nreturn [{ json: {\n  source: 'fixture', portalId: cfg.portalId || FIXTURE._meta.portalId,\n  owners: { active: FIXTURE.owners.active.results.map(owner), archived: FIXTURE.owners.archived.results.map(owner) },\n  records, warnings: [], readErrors: [],\n} }];\n"
+      },
+      "id": "0e159a77-6720-5f74-bcd3-85f387f28a46",
+      "name": "Mock Owner Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        40
+      ],
+      "notes": "sample-payloads/hubspot-owners-and-records.json",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/owners",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "archived",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "cf1870e8-51a8-5f2e-b9d6-d3064bcd4c6d",
+      "name": "HubSpot: Get Active Owners",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        60,
+        320
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Scope: crm.objects.owners.read.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl }}/crm/v3/owners",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "500"
+            },
+            {
+              "name": "archived",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "e719e023-fa07-5356-a1ed-15b35e1f0d71",
+      "name": "HubSpot: Get Archived Owners",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        320
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Deactivated users appear here (userId null).",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Detect Deactivated Owners (live)\n// Deactivated = archived owner (GET /crm/v3/owners?archived=true) or an owner\n// flagged active: false. Emits one CRM search per owner × object type.\n// If either owner list fails, no searches run and the analysis aborts: target\n// validation needs the active owner list.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst bad = (j) => !j || j.error || j.status === 'error';\nconst msg = (j) => String(j?.error?.message || j?.message || j?.error || 'no response').slice(0, 200);\nlet a = null; let r = null;\ntry { a = $('HubSpot: Get Active Owners').first().json; } catch (e) { a = null; }\ntry { r = $('HubSpot: Get Archived Owners').first().json; } catch (e) { r = null; }\nconst readErrors = []; const warnings = [];\nif (bad(a)) readErrors.push(`Active owner list failed: ${msg(a)}`);\nif (bad(r)) readErrors.push(`Archived owner list failed: ${msg(r)}`);\nconst active = bad(a) ? [] : (a.results || []);\nconst archived = bad(r) ? [] : (r.results || []);\nif (!bad(a) && a.paging?.next) warnings.push('More than 500 active owners: only the first page was read. Coverage reps beyond it are treated as unknown.');\nif (!bad(r) && r.paging?.next) warnings.push('More than 500 archived owners: only the first page was read. The rest are picked up after reassignment drains this page.');\nconst now = Date.now();\nconst excluded = new Set(cfg.excludedOwnerIds);\nconst inLookback = (o) => !cfg.lookbackDays || (Date.parse(o.updatedAt || '') || 0) >= now - cfg.lookbackDays * 86400000;\nconst candidates = [...archived, ...active.filter((o) => o.active === false)].filter((o) => !excluded.has(String(o.id)) && inLookback(o));\nconst PROPS = {\n  deals: ['dealname', 'amount', 'dealstage', 'pipeline', 'hs_is_closed', 'hubspot_owner_id'],\n  contacts: ['lifecyclestage', 'hubspot_owner_id'],\n  tasks: ['hs_task_subject', 'hs_task_status', 'hubspot_owner_id'],\n};\nconst body = (objectType, id) => {\n  const owner = { propertyName: 'hubspot_owner_id', operator: 'EQ', value: String(id) };\n  let filterGroups;\n  if (objectType === 'deals') filterGroups = [{ filters: [owner, { propertyName: 'hs_is_closed', operator: 'EQ', value: 'false' }] }];\n  else if (objectType === 'tasks') filterGroups = [{ filters: [owner, { propertyName: 'hs_task_status', operator: 'NEQ', value: 'COMPLETED' }] }];\n  else filterGroups = cfg.contactExcludeLifecycleStages.length\n    ? [{ filters: [owner, { propertyName: 'lifecyclestage', operator: 'NOT_IN', values: cfg.contactExcludeLifecycleStages }] }, { filters: [owner, { propertyName: 'lifecyclestage', operator: 'NOT_HAS_PROPERTY' }] }]\n    : [{ filters: [owner] }];\n  return { filterGroups, properties: PROPS[objectType], sorts: [{ propertyName: 'hs_object_id', direction: 'ASCENDING' }], limit: cfg.searchPageSize };\n};\nconst searches = readErrors.length ? [] : candidates.flatMap((o) => cfg.reassignObjects.map((objectType) => ({ ownerId: String(o.id), objectType, body: body(objectType, o.id) })));\nreturn [{ json: { owners: { active, archived }, warnings, readErrors, searches } }];\n"
+      },
+      "id": "5cf8b578-3d7f-5081-bbcb-1f4f9cd7a3e7",
+      "name": "Detect Deactivated Owners",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        320
+      ],
+      "notes": "Deactivated owners + one search per owner × object.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "6192e4c2-e6bf-5f12-8e39-a255f86dd968",
+              "leftValue": "={{ $('Detect Deactivated Owners').first().json.searches.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "576b6c8c-1708-56c9-9988-59cc142ae383",
+      "name": "Has Record Searches?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per owner × object search.\nreturn $('Detect Deactivated Owners').first().json.searches.map((s) => ({ json: s }));\n"
+      },
+      "id": "1598668d-a7c2-5739-a76f-dab5cbbbf8a3",
+      "name": "Emit Record Searches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl + '/crm/v3/objects/' + $json.objectType + '/search' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          }
+        }
+      },
+      "id": "81b664e9-69b8-5a5e-8a02-917d11e3dfb8",
+      "name": "HubSpot: Search Owned Records",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Open deals (hs_is_closed=false), contacts outside excluded lifecycle stages, tasks not COMPLETED. Search API: 5 requests/s.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Assemble Owner Context (live)\n// Joins each search response with its owner × object request (same order).\n// A failed search is kept as an error for that owner and object: those\n// records are never treated as \"no open records\".\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst D = $('Detect Deactivated Owners').first().json;\nconst bad = (j) => !j || j.error || j.status === 'error';\nconst msg = (j) => String(j?.error?.message || j?.message || j?.error || 'no response').slice(0, 200);\nlet resp = [];\ntry { resp = $('HubSpot: Search Owned Records').isExecuted ? $('HubSpot: Search Owned Records').all() : []; } catch (e) { resp = []; }\nconst records = {};\nD.searches.forEach((s, i) => {\n  const j = resp[i]?.json;\n  records[s.ownerId] = records[s.ownerId] || {};\n  records[s.ownerId][s.objectType] = bad(j)\n    ? { results: [], total: null, error: msg(j) }\n    : { results: Array.isArray(j.results) ? j.results : [], total: Number.isFinite(j.total) ? j.total : (j.results || []).length, error: null };\n});\nreturn [{ json: { source: 'hubspot', portalId: cfg.portalId, owners: D.owners, records, warnings: D.warnings, readErrors: D.readErrors } }];\n"
+      },
+      "id": "e2b9747a-830b-598e-9f94-141a97458b76",
+      "name": "Assemble Owner Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Owner Deactivation & Status Analysis\n// 1. Finds deactivated owners (archived: true or active: false), minus\n//    exclusions and the lookback window.\n// 2. Re-applies the open-record filters to what the searches returned.\n// 3. Applies the grace period and the mass-deactivation guard.\n// 4. Resolves coverage per object: direct map → team pool → backup pool →\n//    fallback owner → hold. Every target must be an active owner.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst ctx = $input.first().json;\nconst now = Date.now();\nconst S = (v) => String(v ?? '').trim();\nconst nameOf = (o) => (`${S(o.firstName)} ${S(o.lastName)}`.trim() || S(o.email) || `Owner ${o.id}`);\nconst base = { generatedAt: new Date(now).toISOString(), portalId: ctx.portalId || '', source: ctx.source, warnings: [...(ctx.warnings || [])] };\nconst emptyCounts = { deactivatedOwners: 0, excludedOwners: 0, reassignOwners: 0, pendingOwners: 0, heldOwners: 0, noRecordOwners: 0, openRecords: 0, deals: 0, contacts: 0, tasks: 0, searchErrors: 0 };\nconst cfgErrors = [['REASSIGNMENT_MAP', cfg.reassignmentMap], ['TEAM_COVERAGE', cfg.teamCoverage]].filter(([, v]) => v && v.__invalid).map(([k]) => `${k} is not valid JSON (object expected). No records were reassigned.`);\nif (cfgErrors.length) {\n  return [{ json: { ...base, status: 'error', error: { kind: 'config', messages: cfgErrors }, owners: [], excludedOwners: [], activeOwners: {}, counts: emptyCounts, massGuard: { tripped: false } } }];\n}\nif ((ctx.readErrors || []).length) {\n  return [{ json: { ...base, status: 'error', error: { kind: 'owner_read', messages: ctx.readErrors }, owners: [], excludedOwners: [], activeOwners: {}, counts: emptyCounts, massGuard: { tripped: false } } }];\n}\n// ── Owners ───────────────────────────────────────────────────────────────────\nconst activeList = (ctx.owners.active || []).filter((o) => o.archived !== true && o.active !== false);\nconst activeOwners = Object.fromEntries(activeList.map((o) => [String(o.id), { id: String(o.id), name: nameOf(o), teams: (o.teams || []).map((t) => ({ id: String(t.id), name: t.name })) }]));\nconst excludedSet = new Set(cfg.excludedOwnerIds);\nconst inactive = [\n  ...(ctx.owners.archived || []).map((o) => ({ ...o, _source: 'archived' })),\n  ...(ctx.owners.active || []).filter((o) => o.active === false && o.archived !== true).map((o) => ({ ...o, _source: 'active_flag' })),\n];\nconst seen = new Set(); const excludedOwners = []; const candidates = [];\nfor (const o of inactive) {\n  const id = String(o.id); if (seen.has(id)) continue; seen.add(id);\n  const at = Date.parse(o.updatedAt || '') || null;\n  if (excludedSet.has(id)) { excludedOwners.push({ ownerId: id, name: nameOf(o), reason: 'excluded_owner' }); continue; }\n  if (cfg.lookbackDays && (!at || at < now - cfg.lookbackDays * 86400000)) { excludedOwners.push({ ownerId: id, name: nameOf(o), reason: 'outside_lookback' }); continue; }\n  candidates.push({ o, id, at });\n}\n// ── Routing helpers ──────────────────────────────────────────────────────────\nconst map = cfg.reassignmentMap && typeof cfg.reassignmentMap === 'object' ? cfg.reassignmentMap : {};\nconst teamCoverage = cfg.teamCoverage && typeof cfg.teamCoverage === 'object' ? cfg.teamCoverage : {};\nconst toList = (v) => (Array.isArray(v) ? v : (v === undefined || v === null || v === '' ? [] : [v])).map((x) => S(x)).filter(Boolean);\nfunction validPool(ids, selfId) {\n  const ok = []; const bad = [];\n  for (const id of ids) { if (id === selfId) bad.push({ id, why: 'is the deactivated owner' }); else if (!activeOwners[id]) bad.push({ id, why: 'is not an active owner' }); else if (excludedSet.has(id)) bad.push({ id, why: 'is excluded' }); else if (!ok.includes(id)) ok.push(id); }\n  return { ok, bad };\n}\nfunction route(o, id, objectType) {\n  const skipped = [];\n  const entry = map[id];\n  const direct = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry[objectType] ?? entry.default) : entry;\n  const levels = [\n    ['direct_map', toList(direct), `owner:${id}:${objectType}`],\n    ...((o.teams || []).slice().sort((a, b) => Number(Boolean(b.primary)) - Number(Boolean(a.primary))).map((t) => [`team_pool`, toList(teamCoverage[String(t.id)]), `team:${t.id}`, t.name])),\n    ['backup_pool', cfg.backupCoverageOwnerIds, 'backup'],\n    ['fallback_owner', toList(cfg.fallbackOwnerId), 'fallback'],\n  ];\n  for (const [level, ids, poolKey, label] of levels) {\n    if (!ids.length) continue;\n    const { ok, bad } = validPool(ids, id);\n    for (const b of bad) skipped.push(`${level === 'team_pool' ? `team ${label || ''}`.trim() : level.replace(/_/g, ' ')} target ${b.id} ${b.why}`);\n    if (ok.length) return { level, pool: ok, poolKey, label: label || null, skipped };\n  }\n  return { level: 'none', pool: [], poolKey: null, label: null, skipped };\n}\n// ── Open-record filters (defence in depth; live searches already filter) ──────\nconst excludeStages = new Set(cfg.dealExcludeStages);\nconst excludeLifecycle = new Set(cfg.contactExcludeLifecycleStages);\nconst isOpen = {\n  deals: (p) => S(p.hs_is_closed).toLowerCase() !== 'true' && !excludeStages.has(S(p.dealstage).toLowerCase()),\n  contacts: (p) => !excludeLifecycle.has(S(p.lifecyclestage).toLowerCase()),\n  tasks: (p) => S(p.hs_task_status).toUpperCase() !== 'COMPLETED',\n};\nconst label = {\n  deals: (r) => (cfg.showRecordNames && r.properties?.dealname ? r.properties.dealname : `Deal ${r.id}`),\n  contacts: (r) => `Contact ${r.id}`,\n  tasks: (r) => (cfg.showRecordNames && r.properties?.hs_task_subject ? r.properties.hs_task_subject : `Task ${r.id}`),\n};\n// ── Per-owner analysis ───────────────────────────────────────────────────────\nconst owners = [];\nfor (const { o, id, at } of candidates) {\n  const objects = {}; const notes = []; let open = 0; let errors = 0;\n  for (const objectType of cfg.reassignObjects) {\n    const slot = ctx.records?.[id]?.[objectType] || { results: [], total: 0, error: null };\n    const rows = (slot.results || []).filter((r) => S(r.properties?.hubspot_owner_id) === id);\n    const keep = rows.filter((r) => isOpen[objectType](r.properties || {}));\n    const shown = (slot.results || []).length;\n    const remaining = Number.isFinite(slot.total) ? Math.max(0, slot.total - shown) : 0;\n    const rt = keep.length || remaining ? route(o, id, objectType) : null;\n    if (rt) for (const s of rt.skipped) if (!notes.includes(s)) notes.push(s);\n    if (slot.error) errors += 1;\n    objects[objectType] = {\n      openCount: keep.length, remaining, filteredOut: rows.length - keep.length + ((slot.results || []).length - rows.length), error: slot.error || null,\n      records: keep.map((r) => ({ id: String(r.id), label: label[objectType](r), amount: objectType === 'deals' ? Number(r.properties?.amount) || 0 : undefined })),\n      route: rt ? { level: rt.level, pool: rt.pool, poolKey: rt.poolKey, teamName: rt.label } : null,\n    };\n    open += keep.length;\n  }\n  const hours = at ? (now - at) / 3600000 : null;\n  let state;\n  if (!open && !errors && !Object.values(objects).some((x) => x.remaining)) state = 'no_open_records';\n  else if (cfg.gracePeriodHours && hours !== null && hours < cfg.gracePeriodHours) state = 'pending_grace';\n  else if (!open) state = errors ? 'search_failed' : 'no_open_records';\n  else if (Object.values(objects).some((x) => x.openCount && x.route?.level === 'none')) state = Object.values(objects).some((x) => x.openCount && x.route?.level !== 'none') ? 'reassign_partial' : 'held_no_coverage';\n  else state = 'reassign';\n  if (errors) notes.push(`${errors} record search${errors > 1 ? 'es' : ''} failed: those records are not counted and will be retried next run`);\n  owners.push({\n    ownerId: id, name: nameOf(o), email: cfg.showOwnerEmail ? S(o.email) : undefined, source: o._source, teams: (o.teams || []).map((t) => t.name).filter(Boolean),\n    deactivatedAt: at ? new Date(at).toISOString() : null, hoursSinceDeactivation: hours === null ? null : Math.round(hours * 10) / 10,\n    graceEndsAt: state === 'pending_grace' ? new Date(at + cfg.gracePeriodHours * 3600000).toISOString() : null,\n    state, openRecords: open, objects, notes,\n  });\n}\n// ── Mass-deactivation guard ──────────────────────────────────────────────────\n// Counts only owners deactivated within MASS_DEACTIVATION_WINDOW_HOURS: a sudden\n// wave (SSO or SCIM mishap, bulk offboarding) is held; an old backlog is not.\nconst acting = owners.filter((x) => x.state === 'reassign' || x.state === 'reassign_partial');\nconst recent = acting.filter((x) => x.hoursSinceDeactivation !== null && x.hoursSinceDeactivation <= cfg.massDeactivationWindowHours);\nconst massGuard = { tripped: cfg.massDeactivationThreshold > 0 && recent.length > cfg.massDeactivationThreshold, actingOwners: recent.length, threshold: cfg.massDeactivationThreshold, windowHours: cfg.massDeactivationWindowHours };\nif (massGuard.tripped) for (const x of acting) { x.state = 'held_mass_deactivation'; x.notes.push(`${recent.length} owners deactivated within ${cfg.massDeactivationWindowHours}h need reassignment (threshold ${cfg.massDeactivationThreshold}): held for review`); }\nconst order = { reassign: 0, reassign_partial: 1, held_mass_deactivation: 2, held_no_coverage: 3, search_failed: 4, pending_grace: 5, no_open_records: 6 };\nowners.sort((a, b) => order[a.state] - order[b.state] || b.openRecords - a.openRecords);\nconst sum = (t) => owners.filter((x) => x.state.startsWith('reassign')).reduce((n, x) => n + (x.objects[t] && x.objects[t].route && x.objects[t].route.level !== 'none' ? x.objects[t].openCount : 0), 0);\nconst counts = {\n  deactivatedOwners: owners.length + excludedOwners.length, excludedOwners: excludedOwners.length,\n  reassignOwners: owners.filter((x) => x.state.startsWith('reassign')).length, pendingOwners: owners.filter((x) => x.state === 'pending_grace').length,\n  heldOwners: owners.filter((x) => x.state.startsWith('held')).length, noRecordOwners: owners.filter((x) => x.state === 'no_open_records').length,\n  openRecords: owners.reduce((n, x) => n + x.openRecords, 0), deals: sum('deals'), contacts: sum('contacts'), tasks: sum('tasks'),\n  searchErrors: owners.reduce((n, x) => n + Object.values(x.objects).filter((y) => y.error).length, 0),\n};\nconst status = massGuard.tripped || counts.heldOwners ? 'action_required' : (counts.deals + counts.contacts + counts.tasks ? 'reassignment_due' : 'clear');\nreturn [{ json: { ...base, status, error: null, owners, excludedOwners, activeOwners, counts, massGuard } }];\n"
+      },
+      "id": "1282e93a-7adc-5e0e-b153-f066630737cc",
+      "name": "Owner Deactivation & Status Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        80
+      ],
+      "notes": "Deactivated owners, open-record filters, grace period, mass guard, coverage routing.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Record Reassignment Execution Builder\n// Assigns every open record of a \"reassign\" owner to a coverage rep:\n// a single target, or round-robin across a pool (cursor kept per pool in\n// workflow memory, production only). Builds batch update payloads of ≤ 100\n// inputs per object type, a rollback list and the per-owner allocation.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst A = $input.first().json;\nconst persist = !cfg.sandboxMode && !['manual', 'test'].includes(cfg.executionMode);\nconst mem = persist ? ($getWorkflowStaticData('global').ownerSentinel || {}) : {};\nconst cursors = { ...(mem.rrCursors || {}) };\nconst assignments = []; const deferred = [];\nlet budget = cfg.maxReassignmentsPerRun;\nfor (const owner of A.owners.filter((o) => o.state === 'reassign' || o.state === 'reassign_partial')) {\n  owner.allocation = {};\n  for (const objectType of cfg.reassignObjects) {\n    const ob = owner.objects[objectType];\n    if (!ob || !ob.openCount || !ob.route || ob.route.level === 'none') continue;\n    const alloc = owner.allocation[objectType] = { level: ob.route.level, teamName: ob.route.teamName, targets: {}, deferred: 0 };\n    for (const rec of ob.records.slice().sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))) {\n      if (budget <= 0) { alloc.deferred += 1; deferred.push({ objectType, recordId: rec.id, fromOwnerId: owner.ownerId }); continue; }\n      const pool = ob.route.pool; const key = ob.route.poolKey;\n      const i = (cursors[key] || 0) % pool.length;\n      const to = pool[i]; cursors[key] = (i + 1) % pool.length;\n      assignments.push({ objectType, recordId: rec.id, label: rec.label, fromOwnerId: owner.ownerId, toOwnerId: to, level: ob.route.level });\n      alloc.targets[to] = (alloc.targets[to] || 0) + 1; budget -= 1;\n    }\n  }\n}\nconst batches = [];\nfor (const objectType of cfg.reassignObjects) {\n  const rows = assignments.filter((a) => a.objectType === objectType);\n  for (let i = 0; i < rows.length; i += 100) {\n    const chunk = rows.slice(i, i + 100);\n    batches.push({\n      objectType, batch: Math.floor(i / 100) + 1, recordIds: chunk.map((a) => a.recordId),\n      body: { inputs: chunk.map((a) => ({ id: a.recordId, properties: { hubspot_owner_id: a.toOwnerId, ...(cfg.previousOwnerProperty && cfg.previousOwnerObjects.includes(objectType) ? { [cfg.previousOwnerProperty]: a.fromOwnerId } : {}) } })) },\n    });\n  }\n}\nconst rollback = cfg.reassignObjects.map((objectType) => ({ objectType, endpoint: `/crm/v3/objects/${objectType}/batch/update`,\n  inputs: assignments.filter((a) => a.objectType === objectType).map((a) => ({ id: a.recordId, properties: { hubspot_owner_id: a.fromOwnerId } })) })).filter((r) => r.inputs.length);\nreturn [{ json: {\n  ...A, assignments, deferred, batches, rollback, nextCursors: cursors,\n  plannedCount: assignments.length, writeAllowed: cfg.reassignmentEnabled && batches.length > 0,\n} }];\n"
+      },
+      "id": "298c1719-1e05-5800-a652-8b42955db2f1",
+      "name": "Record Reassignment Execution Builder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        80
+      ],
+      "notes": "Round-robin allocation, batch payloads (≤100), rollback list.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "e1a78b1f-e081-5b7f-a2fc-b03ec9cc582d",
+              "leftValue": "={{ $json.writeAllowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a6d0fb95-e6a5-541f-a3e1-a7742949f999",
+      "name": "Write Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per batch update (≤ 100 records, one object type).\nreturn $('Record Reassignment Execution Builder').first().json.batches.map((b) => ({ json: b }));\n"
+      },
+      "id": "d17cc345-e19f-5245-8de8-ed363cd4d397",
+      "name": "Emit Update Batches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2260,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config & Safety Gate').first().json.config.hubspotBaseUrl + '/crm/v3/objects/' + $json.objectType + '/batch/update' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 200
+            }
+          }
+        }
+      },
+      "id": "79239300-a0ef-5601-8337-424d44dd780e",
+      "name": "HubSpot: Batch Update Owners",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 1,
+      "waitBetweenTries": 3000,
+      "notes": "Sets hubspot_owner_id. Scopes: crm.objects.deals.write, crm.objects.contacts.write, crm.objects.tasks.write (Tasks API).",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Collect Reassignment Results\n// Pairs every batch response with its request (same order). HubSpot answers\n// a partial failure with 207 and an errors[] list; a full failure arrives as\n// an error item. Round-robin cursors are saved only after a successful write.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst B = $('Record Reassignment Execution Builder').first().json;\nconst reqs = $('Emit Update Batches').all().map((i) => i.json);\nconst resps = $input.all().map((i) => i.json);\nconst updated = new Set(); const failures = [];\nreqs.forEach((q, i) => {\n  const r = resps[i] || {};\n  if (r.error || r.status === 'error') { failures.push({ objectType: q.objectType, batch: q.batch, count: q.recordIds.length, recordIds: q.recordIds, message: String(r.error?.message || r.message || r.error || 'request failed').slice(0, 200) }); return; }\n  const ok = new Set((r.results || []).map((x) => String(x.id)));\n  for (const id of ok) updated.add(`${q.objectType}:${id}`);\n  const errIds = new Set();\n  for (const e of r.errors || []) for (const id of (e.context?.ids || [])) errIds.add(String(id));\n  const missing = q.recordIds.filter((id) => !ok.has(id));\n  if (missing.length) failures.push({ objectType: q.objectType, batch: q.batch, count: missing.length, recordIds: missing, message: String((r.errors || [])[0]?.message || 'not confirmed in the response').slice(0, 200) });\n});\nconst assignments = B.assignments.map((a) => ({ ...a, result: updated.has(`${a.objectType}:${a.recordId}`) ? 'updated' : 'failed' }));\nconst persist = !cfg.sandboxMode && !['manual', 'test'].includes(cfg.executionMode);\nif (persist && updated.size) {\n  const store = $getWorkflowStaticData('global');\n  store.ownerSentinel = { ...(store.ownerSentinel || {}), rrCursors: B.nextCursors, lastWriteAt: new Date().toISOString() };\n}\nreturn [{ json: { updated: updated.size, failed: assignments.filter((a) => a.result === 'failed').length, failures, assignments } }];\n"
+      },
+      "id": "97052bc1-9df2-5d22-b39a-0bc11f6dc527",
+      "name": "Collect Reassignment Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2700,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Build Slack Alert (Block Kit)\n// Deactivated owners, records reallocated per object and target, pending and\n// held owners, error log, links to HubSpot users settings and to records.\n// Repeat suppression: an unchanged state (same owners, states and counts) is\n// not re-posted in production unless records were written in this run.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst B = $('Record Reassignment Execution Builder').first().json;\nlet R = null; try { R = $('Collect Reassignment Results').isExecuted ? $('Collect Reassignment Results').first().json : null; } catch (e) { R = null; }\nconst persist = !cfg.sandboxMode && !['manual', 'test'].includes(cfg.executionMode);\nconst mem = persist ? ($getWorkflowStaticData('global').ownerSentinel || {}) : {};\nconst mode = cfg.sandboxMode ? 'sandbox' : cfg.dryRun ? 'dry_run' : !cfg.reassignmentEnabled ? 'reassignment_disabled' : 'live';\nconst written = Boolean(R);\nconst portal = B.portalId || '';\nconst TYPE = { deals: '0-3', contacts: '0-1', tasks: '0-27' };\nconst NOUN = { deals: ['deal', 'deals'], contacts: ['contact', 'contacts'], tasks: ['task', 'tasks'] };\nconst n = (k, t) => `${k} ${NOUN[t][k === 1 ? 0 : 1]}`;\nconst fill = (t, o = {}) => String(t).replace(/\\{appHost\\}/g, cfg.appHost).replace(/\\{portalId\\}/g, portal).replace(/\\{objectTypeId\\}/g, o.typeId || '').replace(/\\{recordId\\}/g, o.id || '');\nconst recUrl = (t, id) => (portal ? fill('https://{appHost}/contacts/{portalId}/record/{objectTypeId}/{recordId}', { typeId: TYPE[t], id }) : null);\nconst who = (id) => B.activeOwners[id]?.name || `Owner ${id}`;\nconst clip = (s, k) => (s.length > k ? `${s.slice(0, k - 1)}…` : s);\nconst LEVEL = { direct_map: 'direct map', team_pool: 'team pool', backup_pool: 'backup pool', fallback_owner: 'fallback owner' };\nconst result = (a) => (R ? (R.assignments.find((x) => x.objectType === a.objectType && x.recordId === a.recordId)?.result || 'failed') : 'planned');\nconst fp = JSON.stringify({ mode, status: B.status, owners: B.owners.filter((o) => o.state !== 'no_open_records').map((o) => [o.ownerId, o.state, o.openRecords]), err: B.error?.kind || null });\nconst interesting = B.status === 'error' || B.owners.some((o) => o.state !== 'no_open_records');\nlet alert;\nif (B.status === 'error') alert = { needed: B.error.kind === 'config' || cfg.alertOnReadFailure, reason: B.error.kind === 'config' ? 'config_invalid' : 'owner_read_failed' };\nelse if (written) alert = { needed: true, reason: R.failed ? 'reassigned_with_errors' : 'reassigned' };\nelse if (!interesting) alert = { needed: cfg.notifyWhenClear, reason: 'clear' };\nelse if (persist && cfg.suppressRepeatAlerts && mem.lastAlertFingerprint === fp) alert = { needed: false, reason: 'repeat_suppressed' };\nelse alert = { needed: true, reason: B.massGuard.tripped ? 'mass_deactivation_hold' : (B.plannedCount ? 'reassignment_planned' : 'attention_needed') };\n\nconst blocks = [];\nconst verb = written ? 'reassigned' : (mode === 'live' ? 'to reassign' : 'would be reassigned');\nif (B.status === 'error') {\n  blocks.push({ type: 'header', text: { type: 'plain_text', text: B.error.kind === 'config' ? '⚠️ Owner deactivation sentinel: invalid routing configuration' : '⚠️ Owner deactivation sentinel could not run', emoji: true } });\n  blocks.push({ type: 'section', text: { type: 'mrkdwn', text: clip(`${B.error.messages.map((m) => `• ${m}`).join('\\n')}\\n\\nNo records were checked or reassigned, so this is not an all-clear.`, 2900) } });\n} else {\n  const ok = R ? R.updated : B.plannedCount;\n  const head = B.massGuard.tripped ? `⛔ ${B.massGuard.actingOwners} owners deactivated within ${B.massGuard.windowHours}h: reassignment held`\n    : written ? `🔁 ${ok} record${ok === 1 ? '' : 's'} reassigned from ${B.counts.reassignOwners} deactivated owner${B.counts.reassignOwners === 1 ? '' : 's'}${R.failed ? ` · ${R.failed} failed` : ''}`\n    : B.plannedCount ? `🔁 ${B.plannedCount} records ${verb} from ${B.counts.reassignOwners} deactivated owner${B.counts.reassignOwners === 1 ? '' : 's'}`\n    : '👀 Deactivated owners need attention';\n  blocks.push({ type: 'header', text: { type: 'plain_text', text: clip(head, 150), emoji: true } });\n  const tag = { sandbox: '_Sandbox: synthetic data, nothing changed._', dry_run: '_Dry run: nothing changed in HubSpot._', reassignment_disabled: '_REASSIGNMENT_ENABLED=false: nothing changed in HubSpot._', live: '' }[mode];\n  const c = B.counts;\n  blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `${tag ? `${tag}\\n` : ''}*${c.deactivatedOwners} deactivated owners* · ${c.reassignOwners} with open records · ${c.pendingOwners} in grace period · ${c.heldOwners} held · ${c.noRecordOwners} with nothing open · ${c.excludedOwners} excluded${B.warnings.length ? `\\n${B.warnings.map((w) => `⚠️ ${w}`).join('\\n')}` : ''}` } });\n  let shown = 0;\n  for (const o of B.owners.filter((x) => x.state !== 'no_open_records')) {\n    if (shown >= 15) break; shown += 1;\n    const since = o.hoursSinceDeactivation === null ? '' : o.hoursSinceDeactivation < 48 ? ` · deactivated ${Math.round(o.hoursSinceDeactivation)}h ago` : ` · deactivated ${Math.round(o.hoursSinceDeactivation / 24)}d ago`;\n    const title = `*${o.name}* (owner ${o.ownerId}${o.email ? `, ${o.email}` : ''})${o.teams.length ? ` · ${o.teams.join(', ')}` : ''}${since}`;\n    const lines = [];\n    if (o.state.startsWith('reassign')) {\n      for (const t of cfg.reassignObjects) {\n        const al = o.allocation?.[t];\n        const ob = o.objects[t];\n        if (al) {\n          const mine = B.assignments.filter((a) => a.fromOwnerId === o.ownerId && a.objectType === t);\n          const failed = mine.filter((a) => result(a) === 'failed').length;\n          const tg = Object.entries(al.targets).map(([id, k]) => (Object.keys(al.targets).length > 1 ? `${who(id)} ×${k}` : who(id))).join(', ');\n          const links = mine.slice(0, cfg.sampleLinksPerObject).map((a) => { const u = recUrl(t, a.recordId); return u ? `<${u}|${a.label}>` : a.label; }).join(', ');\n          lines.push(`• *${n(mine.length, t)}* ${verb} → ${tg} _(${al.teamName ? `${al.teamName} ` : ''}${LEVEL[al.level]})_${failed ? ` · ❌ ${failed} failed` : ''}${links ? `\\n   ${links}${mine.length > cfg.sampleLinksPerObject ? ` +${mine.length - cfg.sampleLinksPerObject} more` : ''}` : ''}`);\n          if (al.deferred) lines.push(`   _${al.deferred} more held back by MAX_REASSIGNMENTS_PER_RUN; next run continues_`);\n        } else if (ob?.openCount && ob.route?.level === 'none') lines.push(`• ⛔ *${n(ob.openCount, t)}*: no active coverage rep. Set REASSIGNMENT_MAP, TEAM_COVERAGE, BACKUP_COVERAGE_OWNER_IDS or FALLBACK_OWNER_ID.`);\n        if (ob?.remaining) lines.push(`   _+${ob.remaining} more open ${NOUN[t][1]} beyond this run's search page; next run continues_`);\n      }\n    } else {\n      const parts = cfg.reassignObjects.filter((t) => o.objects[t]?.openCount).map((t) => n(o.objects[t].openCount, t));\n      const lead = { pending_grace: `⏳ ${parts.join(', ')} waiting: grace period ends ${String(o.graceEndsAt).slice(0, 16).replace('T', ' ')} UTC`,\n        held_mass_deactivation: `⛔ ${parts.join(', ')} held by the mass-deactivation guard. Review, then raise MASS_DEACTIVATION_THRESHOLD or reassign in HubSpot.`,\n        held_no_coverage: `⛔ ${parts.join(', ')} held: no active coverage rep. Set REASSIGNMENT_MAP, TEAM_COVERAGE, BACKUP_COVERAGE_OWNER_IDS or FALLBACK_OWNER_ID.`,\n        search_failed: '❌ Record searches failed, so open records are unknown.' }[o.state];\n      if (lead) lines.push(lead);\n    }\n    for (const note of o.notes) lines.push(`   ⚠️ ${note}`);\n    blocks.push({ type: 'divider' }, { type: 'section', text: { type: 'mrkdwn', text: clip(`${title}\\n${lines.join('\\n')}`, 2900) } });\n  }\n  const errs = [...(R?.failures || []).map((f) => `• ${n(f.count, f.objectType)} (batch ${f.batch}): ${f.message}`),\n    ...B.owners.flatMap((o) => cfg.reassignObjects.filter((t) => o.objects[t]?.error).map((t) => `• Search ${t} for owner ${o.ownerId}: ${o.objects[t].error}`))];\n  if (errs.length) blocks.push({ type: 'divider' }, { type: 'section', text: { type: 'mrkdwn', text: clip(`*Error log*\\n${errs.slice(0, 12).join('\\n')}${errs.length > 12 ? `\\n_+${errs.length - 12} more in the audit log_` : ''}`, 2900) } });\n}\nif (portal) blocks.push({ type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'Users & teams settings' }, url: fill(cfg.usersSettingsUrlTemplate) }] });\nblocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `Portal ${portal || 'n/a'} · mode ${mode} · run ${cfg.runId}` }] });\nconst text = B.status === 'error' ? 'Owner deactivation sentinel could not run' : `Owner deactivation: ${R ? R.updated : B.plannedCount} records ${verb}`;\nreturn [{ json: { message: { text, blocks: blocks.slice(0, 49) }, alert, fingerprint: fp, mode, slackAllowed: cfg.sendSlackAlerts && alert.needed } }];\n"
+      },
+      "id": "b2ba3d06-9409-5588-9293-3f703300df6b",
+      "name": "Build Slack Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2920,
+        80
+      ],
+      "notes": "Block Kit alert, links, error log, repeat suppression.",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "4b94a587-2e57-5151-a6cc-466b5ec71359",
+              "leftValue": "={{ $json.slackAllowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "25af6fe9-707e-50bc-8d83-96f587e7ce86",
+      "name": "Slack Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3140,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_ALERT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.message) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "d4a3d279-ad41-5f51-930c-1a328973bb93",
+      "name": "Slack: Post Reassignment Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "notes": "",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect Slack Results: Slack incoming webhooks answer \"ok\" (text) on success.\nconst r = $input.first().json;\nconst ok = !r.error && (r.data === undefined || String(r.data).trim() === 'ok' || r.ok === true);\nreturn [{ json: { sent: ok ? 1 : 0, failed: ok ? 0 : 1, error: ok ? null : String(r.error?.message || r.error || r.data || 'unknown').slice(0, 200) } }];\n"
+      },
+      "id": "1b8bf693-3f84-5eb3-85d1-b58f4b50b5f0",
+      "name": "Collect Slack Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3580,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Build Run Summary & Record State\n// JSON for ALERT_WEBHOOK_URL (HRIS / IT offboarding, BI, ticketing): every\n// reassignment with from/to owner and result, plus the rollback payloads.\n// The alert fingerprint is saved (production only) when the alert was\n// delivered or not needed, so an undelivered alert is retried next run.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst B = $('Record Reassignment Execution Builder').first().json;\nconst L = $('Build Slack Alert').first().json;\nlet R = null; try { R = $('Collect Reassignment Results').isExecuted ? $('Collect Reassignment Results').first().json : null; } catch (e) { R = null; }\nlet sl = null; try { sl = $('Collect Slack Results').isExecuted ? $('Collect Slack Results').first().json : null; } catch (e) { sl = null; }\nconst delivered = Boolean(sl && sl.sent);\nconst persist = !cfg.sandboxMode && !['manual', 'test'].includes(cfg.executionMode);\nlet recorded = false;\nif (persist && B.status !== 'error' && (!L.alert.needed || delivered)) {\n  const store = $getWorkflowStaticData('global');\n  store.ownerSentinel = { ...(store.ownerSentinel || {}), lastAlertFingerprint: L.fingerprint, lastRunAt: B.generatedAt };\n  recorded = true;\n}\nconst res = (a) => (R ? (R.assignments.find((x) => x.objectType === a.objectType && x.recordId === a.recordId)?.result || 'failed') : 'planned');\nconst body = {\n  event: 'hubspot.owner_deactivation.run', runId: cfg.runId, generatedAt: B.generatedAt, portalId: B.portalId || null, mode: L.mode, status: B.status, error: B.error,\n  counts: B.counts, massGuard: B.massGuard, updated: R ? R.updated : 0, failed: R ? R.failed : 0,\n  owners: B.owners.map((o) => ({ owner_id: o.ownerId, state: o.state, deactivated_at: o.deactivatedAt, open_records: o.openRecords, grace_ends_at: o.graceEndsAt })),\n  reassignments: B.assignments.map((a) => ({ object_type: a.objectType, record_id: a.recordId, from_owner_id: a.fromOwnerId, to_owner_id: a.toOwnerId, route: a.level, result: res(a) })),\n  rollback: R && R.updated ? B.rollback : [],\n};\nconst sendAllowed = cfg.webhookEnabled && (L.alert.needed || cfg.notifyOnEveryRun);\nreturn [{ json: { body, sendAllowed, recorded, delivered } }];\n"
+      },
+      "id": "7c8f9e9c-4fee-5aae-bf15-26a428c5ba20",
+      "name": "Build Run Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3800,
+        80
+      ],
+      "notes": "Run summary with every reassignment + rollback; alert state (production).",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "2411a6a8-64bd-599a-aad2-f864562e09c3",
+              "leftValue": "={{ $json.sendAllowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2d019355-cd51-5d27-a66e-29f793ca7227",
+      "name": "Summary Webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4020,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ALERT_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ALERT_WEBHOOK_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "0234c8a4-a257-5fec-a6c4-2c2f80677224",
+      "name": "Webhook: Post Run Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4240,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Generic JSON webhook.",
+      "notesInFlow": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Execution Summary & Audit\n// Final record on every path: outcome, safety flags, per-owner state and\n// routing, every reassignment with its result, rollback payloads, delivery.\n// ─────────────────────────────────────────────────────────────────────────────\nconst cfg = $('Config & Safety Gate').first().json.config;\nconst B = $('Record Reassignment Execution Builder').first().json;\nconst L = $('Build Slack Alert').first().json;\nconst S = $('Build Run Summary').first().json;\nlet R = null; try { R = $('Collect Reassignment Results').isExecuted ? $('Collect Reassignment Results').first().json : null; } catch (e) { R = null; }\nlet sl = null; try { sl = $('Collect Slack Results').isExecuted ? $('Collect Slack Results').first().json : null; } catch (e) { sl = null; }\nlet wh = 'not_sent';\ntry { if ($('Webhook: Post Run Summary').isExecuted) { const r = $('Webhook: Post Run Summary').first().json; wh = r.error ? `failed: ${String(r.error.message || r.error).slice(0, 120)}` : 'sent'; } } catch (e) { wh = 'not_sent'; }\nlet outcome;\nif (B.status === 'error') outcome = B.error.kind === 'config' ? 'config_invalid' : 'owner_read_failed';\nelse if (B.massGuard.tripped) outcome = 'held_mass_deactivation';\nelse if (R) outcome = R.failed ? (R.updated ? 'reassigned_with_errors' : 'reassignment_failed') : 'reassigned';\nelse if (B.plannedCount) outcome = { sandbox: 'reassignment_planned_sandbox', dry_run: 'reassignment_planned_dry_run', reassignment_disabled: 'reassignment_planned_disabled', live: 'reassignment_planned' }[L.mode];\nelse if (B.counts.heldOwners) outcome = 'held_no_coverage';\nelse if (B.counts.pendingOwners) outcome = 'pending_grace_period';\nelse outcome = 'no_open_records_on_deactivated_owners';\nreturn [{ json: {\n  workflow: 'n8n-hubspot-owner-deactivation-lead-reassignment-sentinel', runId: cfg.runId, executionMode: cfg.executionMode, finishedAt: new Date().toISOString(), outcome,\n  safety: { sandboxMode: cfg.sandboxMode, dryRun: cfg.dryRun, reassignmentEnabled: cfg.reassignmentEnabled, sendSlackAlerts: cfg.sendSlackAlerts, webhookEnabled: cfg.webhookEnabled,\n    maxReassignmentsPerRun: cfg.maxReassignmentsPerRun, massDeactivationThreshold: cfg.massDeactivationThreshold, gracePeriodHours: cfg.gracePeriodHours },\n  status: B.status, error: B.error, counts: B.counts, massGuard: B.massGuard, warnings: B.warnings,\n  owners: B.owners.map((o) => ({ ownerId: o.ownerId, source: o.source, state: o.state, deactivatedAt: o.deactivatedAt, openRecords: o.openRecords, notes: o.notes,\n    objects: Object.fromEntries(Object.entries(o.objects).map(([t, x]) => [t, { open: x.openCount, remaining: x.remaining, filteredOut: x.filteredOut, error: x.error, route: x.route ? { level: x.route.level, pool: x.route.pool } : null }])) })),\n  excludedOwners: B.excludedOwners,\n  reassignments: (R ? R.assignments : B.assignments.map((a) => ({ ...a, result: 'planned' }))).map((a) => ({ objectType: a.objectType, recordId: a.recordId, from: a.fromOwnerId, to: a.toOwnerId, route: a.level, result: a.result })),\n  deferred: B.deferred, failures: R ? R.failures : [], rollback: B.rollback,\n  slack: sl ? { sent: sl.sent, failed: sl.failed, error: sl.error } : { sent: 0, alert: L.alert },\n  runSummaryWebhook: wh, stateRecorded: S.recorded,\n} }];\n"
+      },
+      "id": "d682b1aa-d703-5123-aadc-85f5f0ba1207",
+      "name": "Execution Summary & Audit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4460,
+        200
+      ],
+      "notes": "Final record on every path.",
+      "notesInFlow": false
+    }
+  ],
+  "connections": {
+    "Daily Owner Status Audit": {
+      "main": [
+        [
+          {
+            "node": "Config & Safety Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config & Safety Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config & Safety Gate": {
+      "main": [
+        [
+          {
+            "node": "Sandbox Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sandbox Mode?": {
+      "main": [
+        [
+          {
+            "node": "Mock Owner Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot: Get Active Owners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Owner Context": {
+      "main": [
+        [
+          {
+            "node": "Owner Deactivation & Status Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Get Active Owners": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Get Archived Owners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Get Archived Owners": {
+      "main": [
+        [
+          {
+            "node": "Detect Deactivated Owners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Deactivated Owners": {
+      "main": [
+        [
+          {
+            "node": "Has Record Searches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Record Searches?": {
+      "main": [
+        [
+          {
+            "node": "Emit Record Searches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Assemble Owner Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Record Searches": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Search Owned Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Search Owned Records": {
+      "main": [
+        [
+          {
+            "node": "Assemble Owner Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Owner Context": {
+      "main": [
+        [
+          {
+            "node": "Owner Deactivation & Status Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Owner Deactivation & Status Analysis": {
+      "main": [
+        [
+          {
+            "node": "Record Reassignment Execution Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Reassignment Execution Builder": {
+      "main": [
+        [
+          {
+            "node": "Write Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Gate": {
+      "main": [
+        [
+          {
+            "node": "Emit Update Batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Update Batches": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Batch Update Owners",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Batch Update Owners": {
+      "main": [
+        [
+          {
+            "node": "Collect Reassignment Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Reassignment Results": {
+      "main": [
+        [
+          {
+            "node": "Build Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Slack Alert": {
+      "main": [
+        [
+          {
+            "node": "Slack Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Gate": {
+      "main": [
+        [
+          {
+            "node": "Slack: Post Reassignment Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: Post Reassignment Alert": {
+      "main": [
+        [
+          {
+            "node": "Collect Slack Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Slack Results": {
+      "main": [
+        [
+          {
+            "node": "Build Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Summary Webhook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summary Webhook?": {
+      "main": [
+        [
+          {
+            "node": "Webhook: Post Run Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execution Summary & Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: Post Run Summary": {
+      "main": [
+        [
+          {
+            "node": "Execution Summary & Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "HubSpot: Get Active Owners": [
+      {
+        "json": {
+          "results": [
+            {
+              "id": "55002",
+              "email": "marcus.vance@example.com",
+              "type": "PERSON",
+              "firstName": "Marcus",
+              "lastName": "Vance",
+              "userId": 81000002,
+              "userIdIncludingInactive": 81000002,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": false,
+              "teams": [
+                {
+                  "id": "7001",
+                  "name": "Enterprise AE (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2026-10-10T04:00:00.000Z"
+            },
+            {
+              "id": "55003",
+              "email": "priya.raman@example.com",
+              "type": "PERSON",
+              "firstName": "Priya",
+              "lastName": "Raman",
+              "userId": 81000003,
+              "userIdIncludingInactive": 81000003,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": false,
+              "teams": [
+                {
+                  "id": "7002",
+                  "name": "SMB Sales (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2026-10-10T04:00:00.000Z"
+            },
+            {
+              "id": "55009",
+              "email": "sofia.lind@example.com",
+              "type": "PERSON",
+              "firstName": "Sofia",
+              "lastName": "Lind",
+              "userId": 81000009,
+              "userIdIncludingInactive": 81000009,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": false,
+              "teams": [
+                {
+                  "id": "7002",
+                  "name": "SMB Sales (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2026-10-10T04:00:00.000Z"
+            },
+            {
+              "id": "55004",
+              "email": "jordan.ellis@example.com",
+              "type": "PERSON",
+              "firstName": "Jordan",
+              "lastName": "Ellis",
+              "userId": 81000004,
+              "userIdIncludingInactive": 81000004,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": false,
+              "teams": [
+                {
+                  "id": "7001",
+                  "name": "Enterprise AE (synthetic)",
+                  "primary": true
+                }
+              ],
+              "active": false,
+              "updatedAt": "2026-11-15T14:00:00.000Z"
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Get Archived Owners": [
+      {
+        "json": {
+          "results": [
+            {
+              "id": "55001",
+              "email": "dana.whitfield@example.com",
+              "type": "PERSON",
+              "firstName": "Dana",
+              "lastName": "Whitfield",
+              "userId": null,
+              "userIdIncludingInactive": 81000001,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": true,
+              "teams": [
+                {
+                  "id": "7001",
+                  "name": "Enterprise AE (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2026-11-15T10:00:00.000Z"
+            },
+            {
+              "id": "55005",
+              "email": "leo.hartmann@example.com",
+              "type": "PERSON",
+              "firstName": "Leo",
+              "lastName": "Hartmann",
+              "userId": null,
+              "userIdIncludingInactive": 81000005,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": true,
+              "teams": [
+                {
+                  "id": "7002",
+                  "name": "SMB Sales (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2026-11-16T13:00:00.000Z"
+            },
+            {
+              "id": "55006",
+              "email": "nina.brooks@example.com",
+              "type": "PERSON",
+              "firstName": "Nina",
+              "lastName": "Brooks",
+              "userId": null,
+              "userIdIncludingInactive": 81000006,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": true,
+              "teams": [
+                {
+                  "id": "7002",
+                  "name": "SMB Sales (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2026-11-14T14:00:00.000Z"
+            },
+            {
+              "id": "55007",
+              "email": "integration.user@example.com",
+              "type": "PERSON",
+              "firstName": "Integration",
+              "lastName": "User",
+              "userId": null,
+              "userIdIncludingInactive": 81000007,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": true,
+              "teams": [],
+              "updatedAt": "2026-11-15T00:00:00.000Z"
+            },
+            {
+              "id": "55008",
+              "email": "omar.castillo@example.com",
+              "type": "PERSON",
+              "firstName": "Omar",
+              "lastName": "Castillo",
+              "userId": null,
+              "userIdIncludingInactive": 81000008,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": true,
+              "teams": [
+                {
+                  "id": "7002",
+                  "name": "SMB Sales (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2024-11-16T16:00:00.000Z"
+            },
+            {
+              "id": "55010",
+              "email": "grace.okafor@example.com",
+              "type": "PERSON",
+              "firstName": "Grace",
+              "lastName": "Okafor",
+              "userId": null,
+              "userIdIncludingInactive": 81000010,
+              "createdAt": "2024-02-01T09:00:00.000Z",
+              "archived": true,
+              "teams": [
+                {
+                  "id": "7001",
+                  "name": "Enterprise AE (synthetic)",
+                  "primary": true
+                }
+              ],
+              "updatedAt": "2025-10-12T16:00:00.000Z"
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Search Owned Records": [
+      {
+        "json": {
+          "total": 4,
+          "results": [
+            {
+              "id": "8100101",
+              "properties": {
+                "dealname": "Apex Logistics - Platform expansion",
+                "amount": "180000",
+                "dealstage": "contractsent",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55001"
+              }
+            },
+            {
+              "id": "8100102",
+              "properties": {
+                "dealname": "Vanguard Cloud - Renewal 2027",
+                "amount": "96000",
+                "dealstage": "decisionmakerboughtin",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55001"
+              }
+            },
+            {
+              "id": "8100103",
+              "properties": {
+                "dealname": "Orchid Health - Pilot",
+                "amount": "24000",
+                "dealstage": "qualifiedtobuy",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55001"
+              }
+            },
+            {
+              "id": "8100104",
+              "properties": {
+                "dealname": "Summit Retail - Analytics add-on",
+                "amount": "41000",
+                "dealstage": "presentationscheduled",
+                "pipeline": "renewals",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55001"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 3,
+          "results": [
+            {
+              "id": "9100101",
+              "properties": {
+                "firstname": "Sarah",
+                "lastname": "Jenkins",
+                "email": "sarah.jenkins@example.com",
+                "lifecyclestage": "lead",
+                "hubspot_owner_id": "55001"
+              }
+            },
+            {
+              "id": "9100102",
+              "properties": {
+                "firstname": "Ethan",
+                "lastname": "Moore",
+                "email": "ethan.moore@example.com",
+                "lifecyclestage": "marketingqualifiedlead",
+                "hubspot_owner_id": "55001"
+              }
+            },
+            {
+              "id": "9100103",
+              "properties": {
+                "firstname": "Aisha",
+                "lastname": "Khan",
+                "email": "aisha.khan@example.com",
+                "lifecyclestage": "salesqualifiedlead",
+                "hubspot_owner_id": "55001"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 3,
+          "results": [
+            {
+              "id": "6100101",
+              "properties": {
+                "hs_task_subject": "Follow up: Apex Logistics contract redlines",
+                "hs_task_status": "NOT_STARTED",
+                "hubspot_owner_id": "55001"
+              }
+            },
+            {
+              "id": "6100102",
+              "properties": {
+                "hs_task_subject": "Prep: Vanguard Cloud renewal call",
+                "hs_task_status": "IN_PROGRESS",
+                "hubspot_owner_id": "55001"
+              }
+            },
+            {
+              "id": "6100103",
+              "properties": {
+                "hs_task_subject": "Send pilot recap to Orchid Health",
+                "hs_task_status": "WAITING",
+                "hubspot_owner_id": "55001"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 2,
+          "results": [
+            {
+              "id": "8100108",
+              "properties": {
+                "dealname": "Northwind Media - Upgrade",
+                "amount": "28000",
+                "dealstage": "contractsent",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55005"
+              }
+            },
+            {
+              "id": "8100109",
+              "properties": {
+                "dealname": "Lumiere Optique - New logo",
+                "amount": "54000",
+                "dealstage": "appointmentscheduled",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55005"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 1,
+          "results": [
+            {
+              "id": "9100106",
+              "properties": {
+                "firstname": "Hannah",
+                "lastname": "Cole",
+                "email": "hannah.cole@example.com",
+                "lifecyclestage": "lead",
+                "hubspot_owner_id": "55005"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 2,
+          "results": [
+            {
+              "id": "8100106",
+              "properties": {
+                "dealname": "Harbor Freightways - Fleet module",
+                "amount": "33000",
+                "dealstage": "appointmentscheduled",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55008"
+              }
+            },
+            {
+              "id": "8100107",
+              "properties": {
+                "dealname": "Brightwater Labs - Seat expansion",
+                "amount": "12000",
+                "dealstage": "qualifiedtobuy",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55008"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 1,
+          "results": [
+            {
+              "id": "9100105",
+              "properties": {
+                "firstname": "Diego",
+                "lastname": "Alvarez",
+                "email": "diego.alvarez@example.com",
+                "lifecyclestage": "opportunity",
+                "hubspot_owner_id": "55008"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 1,
+          "results": [
+            {
+              "id": "6100105",
+              "properties": {
+                "hs_task_subject": "Call: Harbor Freightways demo",
+                "hs_task_status": "NOT_STARTED",
+                "hubspot_owner_id": "55008"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 1,
+          "results": [
+            {
+              "id": "8100110",
+              "properties": {
+                "dealname": "Cobalt Systems - Expansion",
+                "amount": "72000",
+                "dealstage": "presentationscheduled",
+                "pipeline": "default",
+                "hs_is_closed": "false",
+                "hubspot_owner_id": "55004"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "total": 0,
+          "results": []
+        }
+      },
+      {
+        "json": {
+          "total": 1,
+          "results": [
+            {
+              "id": "6100106",
+              "properties": {
+                "hs_task_subject": "Draft proposal: Cobalt Systems",
+                "hs_task_status": "NOT_STARTED",
+                "hubspot_owner_id": "55004"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "HubSpot: Batch Update Owners": [
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "8100101",
+              "properties": {
+                "hubspot_owner_id": "x"
+              }
+            },
+            {
+              "id": "8100102",
+              "properties": {
+                "hubspot_owner_id": "x"
+              }
+            },
+            {
+              "id": "8100103",
+              "properties": {
+                "hubspot_owner_id": "x"
+              }
+            },
+            {
+              "id": "8100104",
+              "properties": {
+                "hubspot_owner_id": "x"
+              }
+            },
+            {
+              "id": "8100106",
+              "properties": {
+                "hubspot_owner_id": "x"
+              }
+            },
+            {
+              "id": "8100107",
+              "properties": {
+                "hubspot_owner_id": "x"
+              }
+            },
+            {
+              "id": "8100110",
+              "properties": {
+                "hubspot_owner_id": "x"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "9100101",
+              "properties": {}
+            },
+            {
+              "id": "9100102",
+              "properties": {}
+            },
+            {
+              "id": "9100103",
+              "properties": {}
+            },
+            {
+              "id": "9100105",
+              "properties": {}
+            }
+          ]
+        }
+      },
+      {
+        "json": {
+          "status": "COMPLETE",
+          "results": [
+            {
+              "id": "6100101",
+              "properties": {}
+            },
+            {
+              "id": "6100102",
+              "properties": {}
+            },
+            {
+              "id": "6100103",
+              "properties": {}
+            },
+            {
+              "id": "6100105",
+              "properties": {}
+            },
+            {
+              "id": "6100106",
+              "properties": {}
+            }
+          ]
+        }
+      }
+    ],
+    "Slack: Post Reassignment Alert": [
+      {
+        "json": {
+          "data": "ok"
+        }
+      }
+    ],
+    "Webhook: Post Run Summary": [
+      {
+        "json": {
+          "received": true
+        }
+      }
+    ]
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 900
+  },
+  "versionId": "c737226d-3de7-51bd-ad56-5561e48df6f0",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
