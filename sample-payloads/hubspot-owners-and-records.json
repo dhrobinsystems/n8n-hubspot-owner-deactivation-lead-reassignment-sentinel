@@ -1,0 +1,533 @@
+{
+  "_meta": {
+    "notice": "Synthetic data only. Portal, owner IDs, user IDs, team IDs, names, emails and records are fictional placeholders.",
+    "portalId": "99000001",
+    "relativeTimes": "_relative.updatedHoursAgo is resolved to an ISO updatedAt at run time (the owner's updatedAt is used as the deactivation time).",
+    "expected": {
+      "reassigned": {
+        "deals": 7,
+        "contacts": 4,
+        "tasks": 5
+      },
+      "pendingGrace": [
+        "55005"
+      ],
+      "excluded": [
+        "55007"
+      ],
+      "noOpenRecords": [
+        "55006",
+        "55010"
+      ]
+    }
+  },
+  "coverageMapping": {
+    "REASSIGNMENT_MAP": {
+      "55001": {
+        "deals": "55002",
+        "contacts": "55003",
+        "tasks": "55002"
+      },
+      "55008": "55010"
+    },
+    "TEAM_COVERAGE": {
+      "7001": [
+        "55002"
+      ],
+      "7002": [
+        "55003",
+        "55009"
+      ]
+    },
+    "BACKUP_COVERAGE_OWNER_IDS": [
+      "55002",
+      "55003"
+    ],
+    "FALLBACK_OWNER_ID": "55009",
+    "EXCLUDED_OWNER_IDS": [
+      "55007"
+    ]
+  },
+  "owners": {
+    "active": {
+      "results": [
+        {
+          "id": "55002",
+          "email": "marcus.vance@example.com",
+          "type": "PERSON",
+          "firstName": "Marcus",
+          "lastName": "Vance",
+          "userId": 81000002,
+          "userIdIncludingInactive": 81000002,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": false,
+          "teams": [
+            {
+              "id": "7001",
+              "name": "Enterprise AE (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 900
+          }
+        },
+        {
+          "id": "55003",
+          "email": "priya.raman@example.com",
+          "type": "PERSON",
+          "firstName": "Priya",
+          "lastName": "Raman",
+          "userId": 81000003,
+          "userIdIncludingInactive": 81000003,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": false,
+          "teams": [
+            {
+              "id": "7002",
+              "name": "SMB Sales (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 900
+          }
+        },
+        {
+          "id": "55009",
+          "email": "sofia.lind@example.com",
+          "type": "PERSON",
+          "firstName": "Sofia",
+          "lastName": "Lind",
+          "userId": 81000009,
+          "userIdIncludingInactive": 81000009,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": false,
+          "teams": [
+            {
+              "id": "7002",
+              "name": "SMB Sales (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 900
+          }
+        },
+        {
+          "id": "55004",
+          "email": "jordan.ellis@example.com",
+          "type": "PERSON",
+          "firstName": "Jordan",
+          "lastName": "Ellis",
+          "userId": 81000004,
+          "userIdIncludingInactive": 81000004,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": false,
+          "teams": [
+            {
+              "id": "7001",
+              "name": "Enterprise AE (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 26
+          },
+          "active": false,
+          "_scenario": "Owner list from a source that exposes an active flag: treated as deactivated"
+        }
+      ]
+    },
+    "archived": {
+      "results": [
+        {
+          "id": "55001",
+          "email": "dana.whitfield@example.com",
+          "type": "PERSON",
+          "firstName": "Dana",
+          "lastName": "Whitfield",
+          "userId": null,
+          "userIdIncludingInactive": 81000001,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": true,
+          "teams": [
+            {
+              "id": "7001",
+              "name": "Enterprise AE (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 30
+          },
+          "_scenario": "Deactivated 30h ago: direct per-object mapping"
+        },
+        {
+          "id": "55005",
+          "email": "leo.hartmann@example.com",
+          "type": "PERSON",
+          "firstName": "Leo",
+          "lastName": "Hartmann",
+          "userId": null,
+          "userIdIncludingInactive": 81000005,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": true,
+          "teams": [
+            {
+              "id": "7002",
+              "name": "SMB Sales (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 3
+          },
+          "_scenario": "Deactivated 3h ago: inside the grace period"
+        },
+        {
+          "id": "55006",
+          "email": "nina.brooks@example.com",
+          "type": "PERSON",
+          "firstName": "Nina",
+          "lastName": "Brooks",
+          "userId": null,
+          "userIdIncludingInactive": 81000006,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": true,
+          "teams": [
+            {
+              "id": "7002",
+              "name": "SMB Sales (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 50
+          },
+          "_scenario": "Deactivated, no open records"
+        },
+        {
+          "id": "55007",
+          "email": "integration.user@example.com",
+          "type": "PERSON",
+          "firstName": "Integration",
+          "lastName": "User",
+          "userId": null,
+          "userIdIncludingInactive": 81000007,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": true,
+          "teams": [],
+          "_relative": {
+            "updatedHoursAgo": 40
+          },
+          "_scenario": "Excluded service owner"
+        },
+        {
+          "id": "55008",
+          "email": "omar.castillo@example.com",
+          "type": "PERSON",
+          "firstName": "Omar",
+          "lastName": "Castillo",
+          "userId": null,
+          "userIdIncludingInactive": 81000008,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": true,
+          "teams": [
+            {
+              "id": "7002",
+              "name": "SMB Sales (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 17520
+          },
+          "_scenario": "Deactivated 2 years ago with records left behind; mapped target 55010 is itself deactivated"
+        },
+        {
+          "id": "55010",
+          "email": "grace.okafor@example.com",
+          "type": "PERSON",
+          "firstName": "Grace",
+          "lastName": "Okafor",
+          "userId": null,
+          "userIdIncludingInactive": 81000010,
+          "createdAt": "2024-02-01T09:00:00.000Z",
+          "archived": true,
+          "teams": [
+            {
+              "id": "7001",
+              "name": "Enterprise AE (synthetic)",
+              "primary": true
+            }
+          ],
+          "_relative": {
+            "updatedHoursAgo": 9600
+          },
+          "_scenario": "Deactivated, used as an (invalid) mapping target"
+        }
+      ]
+    }
+  },
+  "records": {
+    "deals": [
+      {
+        "id": "8100101",
+        "_ownerId": "55001",
+        "properties": {
+          "dealname": "Apex Logistics - Platform expansion",
+          "amount": "180000",
+          "dealstage": "contractsent",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "8100102",
+        "_ownerId": "55001",
+        "properties": {
+          "dealname": "Vanguard Cloud - Renewal 2027",
+          "amount": "96000",
+          "dealstage": "decisionmakerboughtin",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "8100103",
+        "_ownerId": "55001",
+        "properties": {
+          "dealname": "Orchid Health - Pilot",
+          "amount": "24000",
+          "dealstage": "qualifiedtobuy",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "8100104",
+        "_ownerId": "55001",
+        "properties": {
+          "dealname": "Summit Retail - Analytics add-on",
+          "amount": "41000",
+          "dealstage": "presentationscheduled",
+          "pipeline": "renewals",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "8100105",
+        "_ownerId": "55001",
+        "properties": {
+          "dealname": "Kestrel Fintech - Closed deal",
+          "amount": "65000",
+          "dealstage": "closedwon",
+          "pipeline": "default",
+          "hs_is_closed": "true",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "8100106",
+        "_ownerId": "55008",
+        "properties": {
+          "dealname": "Harbor Freightways - Fleet module",
+          "amount": "33000",
+          "dealstage": "appointmentscheduled",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55008"
+        }
+      },
+      {
+        "id": "8100107",
+        "_ownerId": "55008",
+        "properties": {
+          "dealname": "Brightwater Labs - Seat expansion",
+          "amount": "12000",
+          "dealstage": "qualifiedtobuy",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55008"
+        }
+      },
+      {
+        "id": "8100108",
+        "_ownerId": "55005",
+        "properties": {
+          "dealname": "Northwind Media - Upgrade",
+          "amount": "28000",
+          "dealstage": "contractsent",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55005"
+        }
+      },
+      {
+        "id": "8100109",
+        "_ownerId": "55005",
+        "properties": {
+          "dealname": "Lumiere Optique - New logo",
+          "amount": "54000",
+          "dealstage": "appointmentscheduled",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55005"
+        }
+      },
+      {
+        "id": "8100110",
+        "_ownerId": "55004",
+        "properties": {
+          "dealname": "Cobalt Systems - Expansion",
+          "amount": "72000",
+          "dealstage": "presentationscheduled",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55004"
+        }
+      },
+      {
+        "id": "8100111",
+        "_ownerId": "55007",
+        "properties": {
+          "dealname": "Sync test deal",
+          "amount": "1",
+          "dealstage": "appointmentscheduled",
+          "pipeline": "default",
+          "hs_is_closed": "false",
+          "hubspot_owner_id": "55007"
+        }
+      }
+    ],
+    "contacts": [
+      {
+        "id": "9100101",
+        "_ownerId": "55001",
+        "properties": {
+          "firstname": "Sarah",
+          "lastname": "Jenkins",
+          "email": "sarah.jenkins@example.com",
+          "lifecyclestage": "lead",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "9100102",
+        "_ownerId": "55001",
+        "properties": {
+          "firstname": "Ethan",
+          "lastname": "Moore",
+          "email": "ethan.moore@example.com",
+          "lifecyclestage": "marketingqualifiedlead",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "9100103",
+        "_ownerId": "55001",
+        "properties": {
+          "firstname": "Aisha",
+          "lastname": "Khan",
+          "email": "aisha.khan@example.com",
+          "lifecyclestage": "salesqualifiedlead",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "9100104",
+        "_ownerId": "55001",
+        "properties": {
+          "firstname": "Lena",
+          "lastname": "Vogel",
+          "email": "lena.vogel@example.com",
+          "lifecyclestage": "customer",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "9100105",
+        "_ownerId": "55008",
+        "properties": {
+          "firstname": "Diego",
+          "lastname": "Alvarez",
+          "email": "diego.alvarez@example.com",
+          "lifecyclestage": "opportunity",
+          "hubspot_owner_id": "55008"
+        }
+      },
+      {
+        "id": "9100106",
+        "_ownerId": "55005",
+        "properties": {
+          "firstname": "Hannah",
+          "lastname": "Cole",
+          "email": "hannah.cole@example.com",
+          "lifecyclestage": "lead",
+          "hubspot_owner_id": "55005"
+        }
+      }
+    ],
+    "tasks": [
+      {
+        "id": "6100101",
+        "_ownerId": "55001",
+        "properties": {
+          "hs_task_subject": "Follow up: Apex Logistics contract redlines",
+          "hs_task_status": "NOT_STARTED",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "6100102",
+        "_ownerId": "55001",
+        "properties": {
+          "hs_task_subject": "Prep: Vanguard Cloud renewal call",
+          "hs_task_status": "IN_PROGRESS",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "6100103",
+        "_ownerId": "55001",
+        "properties": {
+          "hs_task_subject": "Send pilot recap to Orchid Health",
+          "hs_task_status": "WAITING",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "6100104",
+        "_ownerId": "55001",
+        "properties": {
+          "hs_task_subject": "Log notes: Kestrel Fintech kickoff",
+          "hs_task_status": "COMPLETED",
+          "hubspot_owner_id": "55001"
+        }
+      },
+      {
+        "id": "6100105",
+        "_ownerId": "55008",
+        "properties": {
+          "hs_task_subject": "Call: Harbor Freightways demo",
+          "hs_task_status": "NOT_STARTED",
+          "hubspot_owner_id": "55008"
+        }
+      },
+      {
+        "id": "6100106",
+        "_ownerId": "55004",
+        "properties": {
+          "hs_task_subject": "Draft proposal: Cobalt Systems",
+          "hs_task_status": "NOT_STARTED",
+          "hubspot_owner_id": "55004"
+        }
+      }
+    ]
+  }
+}
