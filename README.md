@@ -68,6 +68,8 @@ After a grace period, each owner's records go to an active coverage rep. The rep
 
 ## 2. Architecture and Data Flow
 
+![HubSpot Owner Deactivation Lead Reassignment Sentinel Workflow Overview](workflow-overview.png)
+
 ```mermaid
 flowchart LR
     SCH[Daily Owner Status Audit<br/>06:20 UTC] --> CFG
